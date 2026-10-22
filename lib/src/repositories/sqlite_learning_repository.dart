@@ -15,7 +15,7 @@ class SqliteLearningRepository implements LearningRepository {
 
     return openDatabase(
       join(databasePath, 'islora.db'),
-      version: 1,
+      version: 2,
       onConfigure: (database) async {
         await database.execute('PRAGMA foreign_keys = ON');
       },
@@ -36,6 +36,26 @@ class SqliteLearningRepository implements LearningRepository {
             FOREIGN KEY (island_id) REFERENCES islands (id) ON DELETE CASCADE
           )
         ''');
+        await database.execute('''
+          ALTER TABLE phrases
+          ADD COLUMN review_interval_days INTEGER NOT NULL DEFAULT 0
+        ''');
+        await database.execute('''
+          ALTER TABLE phrases
+          ADD COLUMN next_review_at INTEGER
+        ''');
+      },
+      onUpgrade: (database, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await database.execute('''
+            ALTER TABLE phrases
+            ADD COLUMN review_interval_days INTEGER NOT NULL DEFAULT 0
+          ''');
+          await database.execute('''
+            ALTER TABLE phrases
+            ADD COLUMN next_review_at INTEGER
+          ''');
+        }
       },
     );
   }
@@ -69,6 +89,17 @@ class SqliteLearningRepository implements LearningRepository {
   }
 
   @override
+  Future<List<Phrase>> getDuePhrases(DateTime now) async {
+    final rows = await (await _db).query(
+      'phrases',
+      where: 'next_review_at IS NULL OR next_review_at <= ?',
+      whereArgs: [now.millisecondsSinceEpoch],
+      orderBy: 'id ASC',
+    );
+    return rows.map(Phrase.fromMap).toList(growable: false);
+  }
+
+  @override
   Future<int> addPhrase({
     required int islandId,
     required String englishText,
@@ -84,5 +115,22 @@ class SqliteLearningRepository implements LearningRepository {
   @override
   Future<void> deletePhrase(int phraseId) async {
     await (await _db).delete('phrases', where: 'id = ?', whereArgs: [phraseId]);
+  }
+
+  @override
+  Future<void> schedulePhraseReview({
+    required int phraseId,
+    required int intervalDays,
+    required DateTime nextReviewAt,
+  }) async {
+    await (await _db).update(
+      'phrases',
+      {
+        'review_interval_days': intervalDays,
+        'next_review_at': nextReviewAt.millisecondsSinceEpoch,
+      },
+      where: 'id = ?',
+      whereArgs: [phraseId],
+    );
   }
 }

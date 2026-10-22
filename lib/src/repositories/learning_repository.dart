@@ -8,6 +8,8 @@ abstract interface class LearningRepository {
 
   Future<List<Phrase>> getPhrases(int islandId);
 
+  Future<List<Phrase>> getDuePhrases(DateTime now);
+
   Future<int> addPhrase({
     required int islandId,
     required String englishText,
@@ -15,4 +17,10 @@ abstract interface class LearningRepository {
   });
 
   Future<void> deletePhrase(int phraseId);
+
+  Future<void> schedulePhraseReview({
+    required int phraseId,
+    required int intervalDays,
+    required DateTime nextReviewAt,
+  });
 }

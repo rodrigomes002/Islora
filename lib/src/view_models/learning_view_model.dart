@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/island.dart';
 import '../models/phrase.dart';
+import '../models/phrase_review_schedule.dart';
 import '../repositories/learning_repository.dart';
 import '../services/speech_service.dart';
 
@@ -13,6 +14,7 @@ class LearningViewModel extends ChangeNotifier {
   final Map<int, List<Phrase>> _phrasesByIsland = {};
 
   List<Island> islands = const [];
+  List<Phrase> duePhrases = const [];
   bool isLoading = false;
   String? errorMessage;
 
@@ -26,6 +28,7 @@ class LearningViewModel extends ChangeNotifier {
 
     try {
       islands = await repository.getIslands();
+      duePhrases = await repository.getDuePhrases(DateTime.now());
     } on Exception catch (error) {
       errorMessage = 'Não foi possível carregar suas ilhas: $error';
     } finally {
@@ -81,6 +84,7 @@ class LearningViewModel extends ChangeNotifier {
         translation: translation.trim(),
       );
       _phrasesByIsland[islandId] = await repository.getPhrases(islandId);
+      duePhrases = await repository.getDuePhrases(DateTime.now());
       errorMessage = null;
       notifyListeners();
       return true;
@@ -98,11 +102,52 @@ class LearningViewModel extends ChangeNotifier {
     try {
       await repository.deletePhrase(phraseId);
       _phrasesByIsland[islandId] = await repository.getPhrases(islandId);
+      duePhrases = await repository.getDuePhrases(DateTime.now());
       errorMessage = null;
     } on Exception catch (error) {
       errorMessage = 'Não foi possível excluir a frase: $error';
     }
     notifyListeners();
+  }
+
+  Future<void> loadDuePhrases() async {
+    isLoading = true;
+    errorMessage = null;
+    notifyListeners();
+
+    try {
+      duePhrases = await repository.getDuePhrases(DateTime.now());
+    } on Exception catch (error) {
+      errorMessage = 'Não foi possível carregar as frases para revisão: $error';
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> reviewPhrase({
+    required Phrase phrase,
+    required bool wasCorrect,
+  }) async {
+    try {
+      final intervalDays = PhraseReviewSchedule.nextIntervalDays(
+        currentIntervalDays: phrase.reviewIntervalDays,
+        wasCorrect: wasCorrect,
+      );
+      await repository.schedulePhraseReview(
+        phraseId: phrase.id,
+        intervalDays: intervalDays,
+        nextReviewAt: DateTime.now().add(Duration(days: intervalDays)),
+      );
+      duePhrases = await repository.getDuePhrases(DateTime.now());
+      errorMessage = null;
+      notifyListeners();
+      return true;
+    } on Exception catch (error) {
+      errorMessage = 'Não foi possível salvar sua revisão: $error';
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<void> speak(String text) async {

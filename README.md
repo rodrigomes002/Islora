@@ -15,6 +15,13 @@ flutter run
 As ilhas e frases são armazenadas localmente no SQLite do dispositivo. A
 reprodução usa a síntese de voz em inglês do Android.
 
+## Revisar frases
+
+Frases novas aparecem na sessão de revisão. Revele a tradução e marque se
+lembrou: respostas corretas espaçam a próxima revisão em 1, 3, 7, 14 e até
+30 dias; respostas incorretas retomam o intervalo de 1 dia. O agendamento é
+salvo localmente no SQLite.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

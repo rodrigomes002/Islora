@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/island.dart';
 import '../models/phrase.dart';
+import '../theme/app_colors.dart';
 import '../view_models/learning_view_model.dart';
 
 class LearningHomePage extends StatefulWidget {
@@ -28,7 +29,7 @@ class _LearningHomePageState extends State<LearningHomePage> {
       appBar: AppBar(
         title: const Row(
           children: [
-            Icon(Icons.waves_rounded, color: Color(0xFF287A66)),
+            Icon(Icons.waves_rounded, color: AppColors.primary),
             SizedBox(width: 8),
             Text('islora', style: TextStyle(fontWeight: FontWeight.w800)),
           ],
@@ -48,6 +49,15 @@ class _LearningHomePageState extends State<LearningHomePage> {
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
                 sliver: SliverToBoxAdapter(
                   child: _HomeHeading(islandCount: _viewModel.islands.length),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                sliver: SliverToBoxAdapter(
+                  child: _ReviewEntryCard(
+                    dueCount: _viewModel.duePhrases.length,
+                    onTap: _openReview,
+                  ),
                 ),
               ),
               if (_viewModel.errorMessage != null)
@@ -96,6 +106,14 @@ class _LearningHomePageState extends State<LearningHomePage> {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => IslandDetailPage(island: island, viewModel: _viewModel),
+      ),
+    );
+  }
+
+  Future<void> _openReview() {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReviewSessionPage(viewModel: _viewModel),
       ),
     );
   }
@@ -245,6 +263,178 @@ class _IslandDetailPageState extends State<IslandDetailPage> {
         phraseId: phrase.id,
       );
     }
+  }
+}
+
+class ReviewSessionPage extends StatefulWidget {
+  const ReviewSessionPage({super.key, required this.viewModel});
+
+  final LearningViewModel viewModel;
+
+  @override
+  State<ReviewSessionPage> createState() => _ReviewSessionPageState();
+}
+
+class _ReviewSessionPageState extends State<ReviewSessionPage> {
+  LearningViewModel get _viewModel => widget.viewModel;
+
+  bool _reviewedAny = false;
+  bool _isSubmitting = false;
+  int? _revealedPhraseId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _viewModel.loadDuePhrases();
+      if (mounted) {
+        setState(() => _reviewedAny = _viewModel.duePhrases.isNotEmpty);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Revisar frases')),
+      body: AnimatedBuilder(
+        animation: _viewModel,
+        builder: (context, _) {
+          if (_viewModel.isLoading && _viewModel.duePhrases.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (_viewModel.duePhrases.isEmpty) {
+            return _ReviewFinished(reviewedAny: _reviewedAny);
+          }
+
+          final phrase = _viewModel.duePhrases.first;
+          final isRevealed = _revealedPhraseId == phrase.id;
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              if (_viewModel.errorMessage != null) ...[
+                _ErrorBanner(
+                  message: _viewModel.errorMessage!,
+                  onDismiss: _viewModel.clearError,
+                ),
+                const SizedBox(height: 16),
+              ],
+              Text(
+                '${_viewModel.duePhrases.length} '
+                '${_viewModel.duePhrases.length == 1 ? 'frase restante' : 'frases restantes'}',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(color: AppColors.muted),
+              ),
+              const SizedBox(height: 20),
+              Card(
+                color: AppColors.card,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.style_rounded,
+                        size: 32,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        phrase.englishText,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: AppColors.ink,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      if (isRevealed) ...[
+                        const SizedBox(height: 20),
+                        const Divider(),
+                        const SizedBox(height: 12),
+                        Text(
+                          phrase.translation.isEmpty
+                              ? 'Nenhuma tradução cadastrada.'
+                              : phrase.translation,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: AppColors.muted),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              if (!isRevealed)
+                FilledButton.icon(
+                  onPressed: () =>
+                      setState(() => _revealedPhraseId = phrase.id),
+                  icon: const Icon(Icons.visibility_rounded),
+                  label: const Text('Revelar tradução'),
+                )
+              else ...[
+                OutlinedButton.icon(
+                  onPressed: () => _viewModel.speak(phrase.englishText),
+                  icon: const Icon(Icons.volume_up_rounded),
+                  label: const Text('Ouvir frase'),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _submitAnswer(phrase, wasCorrect: false),
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Errei'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.error,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _submitAnswer(phrase, wasCorrect: true),
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text('Acertei'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _submitAnswer(Phrase phrase, {required bool wasCorrect}) async {
+    setState(() => _isSubmitting = true);
+    final saved = await _viewModel.reviewPhrase(
+      phrase: phrase,
+      wasCorrect: wasCorrect,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isSubmitting = false;
+      if (saved) _revealedPhraseId = null;
+    });
   }
 }
 
@@ -442,7 +632,7 @@ class _HomeHeading extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: const Color(0xFFE6F1E9),
+            color: AppColors.primarySoft,
             borderRadius: BorderRadius.circular(24),
           ),
           child: Row(
@@ -455,7 +645,7 @@ class _HomeHeading extends StatelessWidget {
                       'Seu inglês,\nno seu ritmo.',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
-                            color: const Color(0xFF163C34),
+                            color: AppColors.ink,
                             fontWeight: FontWeight.w800,
                             height: 1.12,
                           ),
@@ -464,7 +654,7 @@ class _HomeHeading extends StatelessWidget {
                     Text(
                       'Guarde frases úteis e pratique ouvindo.',
                       style: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(color: const Color(0xFF44675D)),
+                          ?.copyWith(color: AppColors.muted),
                     ),
                   ],
                 ),
@@ -473,7 +663,7 @@ class _HomeHeading extends StatelessWidget {
               const Icon(
                 Icons.sailing_rounded,
                 size: 54,
-                color: Color(0xFF287A66),
+                color: AppColors.primary,
               ),
             ],
           ),
@@ -490,7 +680,7 @@ class _HomeHeading extends StatelessWidget {
               ? '1 ilha de aprendizado'
               : '$islandCount ilhas de aprendizado',
           style: Theme.of(context).textTheme.bodyMedium
-              ?.copyWith(color: const Color(0xFF66736C)),
+              ?.copyWith(color: AppColors.muted),
         ),
       ],
     );
@@ -508,13 +698,13 @@ class _IslandHeading extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFE6F1E9),
+        color: AppColors.primarySoft,
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.spa_rounded, color: Color(0xFF287A66), size: 32),
+          const Icon(Icons.spa_rounded, color: AppColors.primary, size: 32),
           const SizedBox(height: 12),
           Text(
             island.name,
@@ -529,11 +719,60 @@ class _IslandHeading extends StatelessWidget {
           Text(
             phraseCount == 1 ? '1 frase salva' : '$phraseCount frases salvas',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: const Color(0xFF287A66),
+              color: AppColors.primary,
               fontWeight: FontWeight.w700,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReviewEntryCard extends StatelessWidget {
+  const _ReviewEntryCard({required this.dueCount, required this.onTap});
+
+  final int dueCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: AppColors.ink,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            const Icon(Icons.style_rounded, color: Colors.white, size: 30),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dueCount == 0 ? 'Revisão em dia' : 'Hora de revisar',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    dueCount == 0
+                        ? 'Suas frases estarão aqui quando vencerem.'
+                        : '$dueCount ${dueCount == 1 ? 'frase pronta' : 'frases prontas'} para praticar',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: Colors.white.withValues(alpha: 0.8)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonal(onPressed: onTap, child: const Text('Revisar')),
+          ],
+        ),
       ),
     );
   }
@@ -548,11 +787,11 @@ class _IslandCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: Colors.white,
+      color: AppColors.card,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: Color(0xFFE8EAE5)),
+        side: const BorderSide(color: AppColors.border),
       ),
       child: InkWell(
         onTap: onTap,
@@ -565,10 +804,10 @@ class _IslandCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE6F1E9),
+                  color: AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(Icons.spa_rounded, color: Color(0xFF287A66)),
+                child: const Icon(Icons.spa_rounded, color: AppColors.primary),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -588,12 +827,12 @@ class _IslandCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: const Color(0xFF66736C)),
+                          ?.copyWith(color: AppColors.muted),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Color(0xFF718078)),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
             ],
           ),
         ),
@@ -616,11 +855,11 @@ class _PhraseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: Colors.white,
+      color: AppColors.card,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: Color(0xFFE8EAE5)),
+        side: const BorderSide(color: AppColors.border),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
@@ -640,7 +879,7 @@ class _PhraseCard extends StatelessWidget {
                     Text(
                       phrase.translation,
                       style: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(color: const Color(0xFF66736C)),
+                          ?.copyWith(color: AppColors.muted),
                     ),
                   ],
                 ],
@@ -689,6 +928,23 @@ class _EmptyPhrases extends StatelessWidget {
   }
 }
 
+class _ReviewFinished extends StatelessWidget {
+  const _ReviewFinished({required this.reviewedAny});
+
+  final bool reviewedAny;
+
+  @override
+  Widget build(BuildContext context) {
+    return _EmptyState(
+      icon: reviewedAny ? Icons.celebration_rounded : Icons.event_available,
+      title: reviewedAny ? 'Revisão concluída!' : 'Tudo em dia!',
+      message: reviewedAny
+          ? 'Muito bem! Suas próximas frases aparecerão aqui quando chegar a hora.'
+          : 'Não há frases para revisar agora. Adicione frases e volte mais tarde.',
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   const _EmptyState({
     required this.icon,
@@ -707,7 +963,7 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 52, color: const Color(0xFF287A66)),
+          Icon(icon, size: 52, color: AppColors.primary),
           const SizedBox(height: 14),
           Text(
             title,
@@ -720,7 +976,7 @@ class _EmptyState extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium
-                ?.copyWith(color: const Color(0xFF66736C)),
+                ?.copyWith(color: AppColors.muted),
           ),
         ],
       ),
