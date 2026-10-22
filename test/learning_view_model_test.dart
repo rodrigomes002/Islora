@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:islora/main.dart';
 import 'package:islora/src/models/island.dart';
+import 'package:islora/src/models/learning_backup.dart';
 import 'package:islora/src/models/phrase.dart';
 import 'package:islora/src/models/phrase_review_schedule.dart';
 import 'package:islora/src/repositories/learning_repository.dart';
@@ -125,6 +126,65 @@ void main() {
       ),
       30,
     );
+  });
+
+  test('exports text and review progress as a JSON backup', () async {
+    await viewModel.addIsland(name: 'Travel', description: 'Airport phrases');
+    final islandId = viewModel.islands.single.id;
+    await viewModel.addPhrase(
+      islandId: islandId,
+      englishText: 'Where is the station?',
+      translation: 'Onde fica a estação?',
+    );
+    final phrase = (await repository.getPhrases(islandId)).single;
+    await repository.schedulePhraseReview(
+      phraseId: phrase.id,
+      intervalDays: 3,
+      nextReviewAt: DateTime.utc(2026, 10, 25),
+    );
+
+    final json = await viewModel.exportBackup();
+    final backup = LearningBackup.fromJson(json!);
+
+    expect(backup.islands.single.description, 'Airport phrases');
+    expect(backup.phrases.single.englishText, 'Where is the station?');
+    expect(backup.phrases.single.reviewIntervalDays, 3);
+    expect(
+      backup.phrases.single.nextReviewAt?.millisecondsSinceEpoch,
+      DateTime.utc(2026, 10, 25).millisecondsSinceEpoch,
+    );
+  });
+
+  test('imports a backup and replaces existing data', () async {
+    await viewModel.addIsland(name: 'Old island', description: '');
+    final backup = LearningBackup(
+      islands: const [Island(id: 10, name: 'Travel', description: 'Airport')],
+      phrases: const [
+        Phrase(
+          id: 20,
+          islandId: 10,
+          englishText: 'Where is the station?',
+          translation: 'Onde fica a estação?',
+          reviewIntervalDays: 7,
+        ),
+      ],
+    );
+
+    final imported = await viewModel.importBackup(backup.toJson());
+
+    expect(imported, isTrue);
+    expect(viewModel.islands.map((island) => island.name), ['Travel']);
+    expect(viewModel.duePhrases.single.reviewIntervalDays, 7);
+  });
+
+  test('rejects an invalid backup without changing existing data', () async {
+    await viewModel.addIsland(name: 'Keep this', description: '');
+
+    final imported = await viewModel.importBackup('not json');
+
+    expect(imported, isFalse);
+    expect(viewModel.islands.single.name, 'Keep this');
+    expect(viewModel.errorMessage, contains('Não foi possível importar'));
   });
 
   testWidgets('creates an island and phrase, then plays its audio', (
@@ -275,6 +335,45 @@ class _FakeLearningRepository implements LearningRepository {
         return;
       }
     }
+  }
+
+  @override
+  Future<LearningBackup> exportBackup() async {
+    return LearningBackup(
+      islands: List.of(_islands),
+      phrases: _phrasesByIsland.values.expand((phrases) => phrases).toList(),
+    );
+  }
+
+  @override
+  Future<void> importBackup(LearningBackup backup) async {
+    _islands
+      ..clear()
+      ..addAll(backup.islands);
+    _phrasesByIsland
+      ..clear()
+      ..addEntries(
+        backup.islands.map(
+          (island) => MapEntry(
+            island.id,
+            backup.phrases
+                .where((phrase) => phrase.islandId == island.id)
+                .toList(),
+          ),
+        ),
+      );
+    _nextIslandId = backup.islands.isEmpty
+        ? 1
+        : backup.islands
+                  .map((island) => island.id)
+                  .reduce((a, b) => a > b ? a : b) +
+              1;
+    _nextPhraseId = backup.phrases.isEmpty
+        ? 1
+        : backup.phrases
+                  .map((phrase) => phrase.id)
+                  .reduce((a, b) => a > b ? a : b) +
+              1;
   }
 
   int? reviewIntervalFor(int phraseId) {

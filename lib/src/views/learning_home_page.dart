@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/island.dart';
@@ -34,6 +37,37 @@ class _LearningHomePageState extends State<LearningHomePage> {
             Text('islora', style: TextStyle(fontWeight: FontWeight.w800)),
           ],
         ),
+        actions: [
+          PopupMenuButton<_BackupAction>(
+            tooltip: 'Backup',
+            onSelected: (action) {
+              switch (action) {
+                case _BackupAction.export:
+                  _exportBackup();
+                case _BackupAction.import:
+                  _selectBackupToImport();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _BackupAction.export,
+                child: ListTile(
+                  leading: Icon(Icons.download_rounded),
+                  title: Text('Exportar backup'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: _BackupAction.import,
+                child: ListTile(
+                  leading: Icon(Icons.upload_rounded),
+                  title: Text('Importar backup'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddIslandDialog,
@@ -130,7 +164,88 @@ class _LearningHomePageState extends State<LearningHomePage> {
       ).showSnackBar(const SnackBar(content: Text('Ilha criada com sucesso.')));
     }
   }
+
+  Future<void> _exportBackup() async {
+    final contents = await _viewModel.exportBackup();
+    if (!mounted) return;
+    if (contents == null) {
+      _showBackupMessage(
+        _viewModel.errorMessage ?? 'Falha ao exportar backup.',
+      );
+      return;
+    }
+
+    try {
+      final savedPath = await FilePicker.saveFile(
+        fileName: 'islora-backup.json',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        bytes: utf8.encode(contents),
+      );
+      if (savedPath != null && mounted) {
+        _showBackupMessage('Backup exportado com sucesso.');
+      }
+    } on Exception catch (error) {
+      if (mounted) {
+        _showBackupMessage('Não foi possível salvar o backup: $error');
+      }
+    }
+  }
+
+  Future<void> _selectBackupToImport() async {
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (!mounted || files.isEmpty) return;
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Substituir seus dados?'),
+          content: const Text(
+            'A importação substituirá todas as ilhas, frases e o progresso '
+            'de revisão atuais.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Importar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+
+      final bytes = await files.single.readAsBytes();
+      final imported = await _viewModel.importBackup(utf8.decode(bytes));
+      if (mounted) {
+        _showBackupMessage(
+          imported
+              ? 'Backup importado com sucesso.'
+              : _viewModel.errorMessage ?? 'Falha ao importar backup.',
+        );
+      }
+    } on Exception catch (error) {
+      if (mounted) {
+        _showBackupMessage('Não foi possível importar o backup: $error');
+      }
+    }
+  }
+
+  void _showBackupMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 }
+
+enum _BackupAction { export, import }
 
 class IslandDetailPage extends StatefulWidget {
   const IslandDetailPage({

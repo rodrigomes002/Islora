@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/island.dart';
+import '../models/learning_backup.dart';
 import '../models/phrase.dart';
 import '../models/phrase_review_schedule.dart';
 import '../repositories/learning_repository.dart';
@@ -121,6 +122,36 @@ class LearningViewModel extends ChangeNotifier {
       errorMessage = 'Não foi possível carregar as frases para revisão: $error';
     } finally {
       isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> exportBackup() async {
+    try {
+      final backup = await repository.exportBackup();
+      errorMessage = null;
+      return backup.toJson();
+    } on Exception catch (error) {
+      errorMessage = 'Não foi possível exportar seus textos: $error';
+      return null;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<bool> importBackup(String source) async {
+    try {
+      final backup = LearningBackup.fromJson(source);
+      await repository.importBackup(backup);
+      islands = await repository.getIslands();
+      duePhrases = await repository.getDuePhrases(DateTime.now());
+      _phrasesByIsland.clear();
+      errorMessage = null;
+      return true;
+    } on Exception catch (error) {
+      errorMessage = 'Não foi possível importar o backup: $error';
+      return false;
+    } finally {
       notifyListeners();
     }
   }

@@ -2,6 +2,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/island.dart';
+import '../models/learning_backup.dart';
 import '../models/phrase.dart';
 import 'learning_repository.dart';
 
@@ -132,5 +133,41 @@ class SqliteLearningRepository implements LearningRepository {
       where: 'id = ?',
       whereArgs: [phraseId],
     );
+  }
+
+  @override
+  Future<LearningBackup> exportBackup() async {
+    final database = await _db;
+    final islands = await database.query('islands', orderBy: 'id ASC');
+    final phrases = await database.query('phrases', orderBy: 'id ASC');
+    return LearningBackup(
+      islands: islands.map(Island.fromMap).toList(growable: false),
+      phrases: phrases.map(Phrase.fromMap).toList(growable: false),
+    );
+  }
+
+  @override
+  Future<void> importBackup(LearningBackup backup) async {
+    final database = await _db;
+    await database.transaction((transaction) async {
+      await transaction.delete('islands');
+      for (final island in backup.islands) {
+        await transaction.insert('islands', {
+          'id': island.id,
+          'name': island.name,
+          'description': island.description,
+        });
+      }
+      for (final phrase in backup.phrases) {
+        await transaction.insert('phrases', {
+          'id': phrase.id,
+          'island_id': phrase.islandId,
+          'english_text': phrase.englishText,
+          'translation': phrase.translation,
+          'review_interval_days': phrase.reviewIntervalDays,
+          'next_review_at': phrase.nextReviewAt?.millisecondsSinceEpoch,
+        });
+      }
+    });
   }
 }

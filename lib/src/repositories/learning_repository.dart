@@ -1,4 +1,5 @@
 import '../models/island.dart';
+import '../models/learning_backup.dart';
 import '../models/phrase.dart';
 
 abstract interface class LearningRepository {
@@ -23,4 +24,8 @@ abstract interface class LearningRepository {
     required int intervalDays,
     required DateTime nextReviewAt,
   });
+
+  Future<LearningBackup> exportBackup();
+
+  Future<void> importBackup(LearningBackup backup);
 }
